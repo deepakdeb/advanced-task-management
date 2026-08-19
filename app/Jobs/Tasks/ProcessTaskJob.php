@@ -20,11 +20,14 @@ class ProcessTaskJob implements ShouldQueue
 
     public int $tries;
 
+    public int $timeout;
+
     public function __construct(
         public readonly string $taskId,
         ?TaskPriority $priority = null,
     ) {
         $this->tries = (int) config('tasks.max_attempts', 4);
+        $this->timeout = (int) config('tasks.timeout', 120);
 
         if ($priority !== null) {
             $this->onQueue(config('tasks.queues.'.$priority->value));

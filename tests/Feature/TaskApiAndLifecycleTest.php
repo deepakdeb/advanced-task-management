@@ -36,7 +36,7 @@ class TaskApiAndLifecycleTest extends TestCase
         $this->createTask($owner);
         $this->createTask($other);
 
-        $response = $this->actingAs($owner, 'sanctum')->getJson('/api/tasks?status=pending&sort=created_at&direction=asc');
+        $response = $this->actingAs($owner, 'sanctum')->getJson('/api/tasks?status=pending&user_id='.$other->getKey().'&sort=created_at&direction=asc');
 
         $response->assertOk()->assertJsonCount(1, 'data');
 
@@ -54,6 +54,15 @@ class TaskApiAndLifecycleTest extends TestCase
             'title' => 'Invalid report',
             'payload' => ['source' => 'wrong'],
         ])->assertUnprocessable();
+    }
+
+    public function test_task_filters_reject_unapproved_sort_columns(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/tasks?sort=error_message')
+            ->assertUnprocessable();
     }
 
     public function test_user_cannot_view_or_cancel_another_users_task(): void
@@ -78,6 +87,33 @@ class TaskApiAndLifecycleTest extends TestCase
         $this->assertSame(TaskStatus::PENDING, $task->status);
         Queue::assertPushed(ProcessTaskJob::class);
         $this->assertDatabaseHas('task_logs', ['task_id' => $task->getKey(), 'event' => 'retry_dispatched']);
+    }
+
+    public function test_pending_task_can_be_cancelled_but_completed_task_cannot(): void
+    {
+        $user = User::factory()->create();
+        $pending = $this->createTask($user);
+        $completed = $this->createTask($user, ['status' => TaskStatus::COMPLETED]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/tasks/{$pending->getKey()}/cancel")
+            ->assertOk();
+        $this->assertSame(TaskStatus::CANCELLED, $pending->fresh()->status);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/tasks/{$completed->getKey()}/cancel")
+            ->assertConflict();
+    }
+
+    public function test_user_cannot_retry_another_users_task(): void
+    {
+        $owner = User::factory()->create();
+        $other = User::factory()->create();
+        $task = $this->createTask($owner, ['status' => TaskStatus::FAILED]);
+
+        $this->actingAs($other, 'sanctum')
+            ->postJson("/api/tasks/{$task->getKey()}/retry")
+            ->assertForbidden();
     }
 
     public function test_cleanup_marks_only_stale_processing_tasks_failed(): void

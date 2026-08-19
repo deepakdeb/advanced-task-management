@@ -42,6 +42,19 @@ We would like to extend our thanks to the following sponsors for funding Laravel
 - **[Redberry](https://redberry.international/laravel-development)**
 - **[Active Logic](https://activelogic.com)**
 
+## Task Workers
+
+Run dedicated Redis workers for each task priority in production:
+
+```bash
+php artisan queue:work redis --queue=tasks-critical --tries=4 --timeout=120
+php artisan queue:work redis --queue=tasks-high --tries=4 --timeout=120
+php artisan queue:work redis --queue=tasks-normal --tries=4 --timeout=120
+php artisan queue:work redis --queue=tasks-low --tries=4 --timeout=120
+```
+
+The queues are configured through `config/tasks.php` and use Predis via the Redis connection.
+
 ## Contributing
 
 Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
