@@ -15,6 +15,7 @@ class TaskExecutionService
         private readonly TaskLockService $locks,
         private readonly TaskProcessorRegistry $processors,
         private readonly TaskLogService $logs,
+        private readonly TaskCancellationService $cancellation,
     ) {}
 
     public function execute(Task $task): void
@@ -32,6 +33,7 @@ class TaskExecutionService
 
             try {
                 $this->processors->resolve($startedTask->type)->process($startedTask);
+                $this->cancellation->throwIfCancelled($startedTask);
             } catch (TaskCancelledException $exception) {
                 $this->logs->record($startedTask->fresh(), 'cancelled', $exception->getMessage());
 
