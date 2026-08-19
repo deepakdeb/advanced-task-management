@@ -55,6 +55,23 @@ class TaskArchitectureTest extends TestCase
         $this->assertSame(1, $task->attempts);
         $this->assertNotNull($task->completed_at);
         $this->assertSame(['processing_started', 'processing_completed'], $task->logs()->pluck('event')->all());
+        $this->assertIsInt($task->logs()->where('event', 'processing_completed')->firstOrFail()->metadata['duration_ms']);
+    }
+
+    public function test_processing_delay_is_observable_in_a_worker(): void
+    {
+        config()->set('tasks.processing_delay_ms', 2);
+        config()->set('tasks.batch_sizes.report', 1);
+        $task = $this->makeTask(TaskType::REPORT, [
+            'report_id' => 'monthly',
+            'format' => 'csv',
+            'sections' => 2,
+        ]);
+
+        app(TaskExecutionService::class)->execute($task);
+
+        $duration = $task->fresh()->logs()->where('event', 'processing_completed')->firstOrFail()->metadata['duration_ms'];
+        $this->assertGreaterThanOrEqual(4, $duration);
     }
 
     public function test_invalid_payload_fails_without_retrying_forever(): void

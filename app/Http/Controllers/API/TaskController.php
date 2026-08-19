@@ -32,6 +32,13 @@ class TaskController extends Controller
             }
         }
 
+        if (isset($filters['search'])) {
+            $query->where(function ($searchQuery) use ($filters): void {
+                $searchQuery->where('title', 'like', '%'.$filters['search'].'%')
+                    ->orWhere('id', 'like', '%'.$filters['search'].'%');
+            });
+        }
+
         if (isset($filters['from'])) {
             $query->where('created_at', '>=', $filters['from']);
         }

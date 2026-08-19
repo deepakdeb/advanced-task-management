@@ -1,50 +1,39 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Advanced Task Management System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 12 task management API with Sanctum authentication, Redis queues, priority workers, retry handling, cancellation, idempotency protection, audit logs, and stale-task recovery.
 
-## About Laravel
+## Requirements
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.2+
+- Composer
+- SQLite, MySQL, or PostgreSQL
+- Redis
+- Node.js and npm for the Laravel asset build
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Predis is installed and selected through `REDIS_CLIENT=predis`.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Installation
 
-## Learning Laravel
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+npm install
+npm run build
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Configure the database and Redis values in `.env`. The default local setup uses SQLite and Redis on `127.0.0.1:6379`.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Run The Application
 
-## Laravel Sponsors
+Start the HTTP server:
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+php artisan serve
+```
 
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Task Workers
-
-Run dedicated Redis workers for each task priority in production:
+Start one dedicated worker per priority queue:
 
 ```bash
 php artisan queue:work redis --queue=tasks-critical --tries=4 --timeout=120
@@ -53,20 +42,101 @@ php artisan queue:work redis --queue=tasks-normal --tries=4 --timeout=120
 php artisan queue:work redis --queue=tasks-low --tries=4 --timeout=120
 ```
 
-The queues are configured through `config/tasks.php` and use Predis via the Redis connection.
+Run stale-task cleanup manually with `php artisan tasks:cleanup-stale`. Laravel schedules it every five minutes; production should run `php artisan schedule:work` or invoke the scheduler from cron.
 
-## Contributing
+## API
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Authentication endpoints:
 
-## Code of Conduct
+```text
+POST /api/register
+POST /api/login
+POST /api/logout       authenticated
+GET  /api/user         authenticated
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Task endpoints, all authenticated with `auth:sanctum`:
 
-## Security Vulnerabilities
+```text
+POST /api/tasks
+GET  /api/tasks
+GET  /api/tasks/{task}
+POST /api/tasks/{task}/cancel
+POST /api/tasks/{task}/retry
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Create a report task:
 
-## License
+```json
+{
+	"type": "report",
+	"title": "Monthly Sales Report",
+	"priority": "high",
+	"payload": {
+		"report_id": "monthly-sales",
+		"format": "csv",
+		"sections": 12
+	}
+}
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Supported payloads are intentionally type-specific:
+
+- `report`: `report_id`, `format`, optional `sections`
+- `bulk_notification`: `notification_template`, `recipient_ids`
+- `data_processing`: `source`, `operation`, optional `records`
+
+Task listing supports `status`, `type`, `priority`, `search`, `from`, `to`, `per_page`, `sort`, and `direction`. Sorting is limited to `created_at`, `updated_at`, `priority`, and `status`; pagination is capped at 100 records.
+
+## Architecture
+
+The API creates a pending task and dispatches `ProcessTaskJob` after the database transaction commits. The job delegates processing through `TaskProcessorRegistry` and `TaskProcessorInterface`, so adding a processor does not require a processor conditional in the job.
+
+Processors work in bounded batches and check cancellation before and between batches. Set `TASK_PROCESSING_DELAY_MS` to a positive value when demonstrating measurable worker-only processing; the default is zero for fast tests and local development.
+
+Task state transitions use short transactions with `lockForUpdate()`. Redis atomic locks prevent duplicate execution of the same deterministic task execution key. Completion performs a final cancellation/state check, so a task cancelled during processing cannot later become completed.
+
+## Reliability
+
+- Maximum attempts and backoff are configured in `config/tasks.php`.
+- Retry backoff defaults to 10, 30, 120, and 300 seconds.
+- Permanent processor validation failures are stored as failed and do not retry indefinitely.
+- Retry and cancellation transitions are authorized and concurrency-safe.
+- `tasks:cleanup-stale` marks processing tasks older than the configured stale timeout as failed.
+- Task logs record creation, queueing, processing, failures, cancellation, retry, and stale recovery events.
+- Completion and failure logs include execution duration and retry metadata.
+
+Relevant environment settings include `TASK_MAX_ATTEMPTS`, `TASK_STALE_TIMEOUT`, `TASK_LOCK_TIMEOUT`, `TASK_TIMEOUT`, `TASK_PROCESSING_DELAY_MS`, queue names, and processor batch sizes.
+
+## Database
+
+Tasks use ULIDs and enum casts for type, status, and priority. Task logs belong to tasks and are deleted with their parent task. Indexes cover user/status filtering, user/creation ordering, status/priority queue selection, and task-log lookup by task and creation time.
+
+## Testing
+
+Run the complete suite:
+
+```bash
+php artisan test
+```
+
+Run formatting checks:
+
+```bash
+./vendor/bin/pint --test
+```
+
+For an isolated database verification:
+
+```bash
+php artisan migrate:fresh --env=testing
+php artisan test
+```
+
+The tests cover authentication, user isolation, payload validation, search and pagination filters, queue dispatch, priority routing, processor resolution, retries, cancellation races, stale cleanup, idempotent duplicate jobs, and task state transitions.
+
+## Known Limitations
+
+- Processors simulate work and do not integrate with external reporting, notification, or data systems.
+- Redis must be available for production queue workers and distributed locks.
+- PHPStan is not included; Pint and PHPUnit are the configured quality gates.

@@ -28,8 +28,17 @@ class BulkNotificationTaskProcessor implements TaskProcessorInterface
             if ($batch === []) {
                 throw new InvalidArgumentException('Notification batches cannot be empty.');
             }
+            $this->simulateWork();
         }
 
         $this->cancellation->throwIfCancelled($task);
+    }
+
+    private function simulateWork(): void
+    {
+        $delay = max(0, (int) config('tasks.processing_delay_ms', 0));
+        if ($delay > 0) {
+            usleep($delay * 1000);
+        }
     }
 }

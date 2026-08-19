@@ -23,6 +23,7 @@ class TaskFilterRequest extends FormRequest
             'status' => ['sometimes', Rule::enum(TaskStatus::class)],
             'type' => ['sometimes', Rule::enum(TaskType::class)],
             'priority' => ['sometimes', Rule::enum(TaskPriority::class)],
+            'search' => ['sometimes', 'string', 'max:100'],
             'from' => ['sometimes', 'date'],
             'to' => ['sometimes', 'date', 'after_or_equal:from'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],

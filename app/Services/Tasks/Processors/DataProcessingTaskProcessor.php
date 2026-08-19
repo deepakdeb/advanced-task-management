@@ -28,8 +28,17 @@ class DataProcessingTaskProcessor implements TaskProcessorInterface
         for ($offset = 0; $offset < $records; $offset += $batchSize) {
             $this->cancellation->throwIfCancelled($task);
             min($batchSize, $records - $offset);
+            $this->simulateWork();
         }
 
         $this->cancellation->throwIfCancelled($task);
+    }
+
+    private function simulateWork(): void
+    {
+        $delay = max(0, (int) config('tasks.processing_delay_ms', 0));
+        if ($delay > 0) {
+            usleep($delay * 1000);
+        }
     }
 }

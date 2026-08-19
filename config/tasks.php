@@ -7,6 +7,7 @@ return [
     'stale_timeout' => (int) env('TASK_STALE_TIMEOUT', 1800),
     'lock_timeout' => (int) env('TASK_LOCK_TIMEOUT', 3600),
     'timeout' => (int) env('TASK_TIMEOUT', 120),
+    'processing_delay_ms' => (int) env('TASK_PROCESSING_DELAY_MS', 0),
     'lock_store' => env('TASK_LOCK_STORE', 'redis'),
     'retry_backoff' => [10, 30, 120, 300],
     'retryable_exceptions' => [RuntimeException::class],

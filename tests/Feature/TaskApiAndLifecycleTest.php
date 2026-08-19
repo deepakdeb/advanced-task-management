@@ -65,6 +65,20 @@ class TaskApiAndLifecycleTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_task_search_matches_owned_titles_only(): void
+    {
+        $owner = User::factory()->create();
+        $other = User::factory()->create();
+        $this->createTask($owner, ['title' => 'Monthly Sales Report']);
+        $this->createTask($other, ['title' => 'Monthly Sales Report']);
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/tasks?search=Sales')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'Monthly Sales Report');
+    }
+
     public function test_user_cannot_view_or_cancel_another_users_task(): void
     {
         $owner = User::factory()->create();

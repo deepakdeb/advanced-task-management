@@ -30,6 +30,7 @@ class TaskExecutionService
             $this->logs->record($startedTask, 'processing_started', metadata: [
                 'attempt' => $startedTask->attempts,
             ]);
+            $startedAt = microtime(true);
 
             try {
                 $this->processors->resolve($startedTask->type)->process($startedTask);
@@ -46,11 +47,13 @@ class TaskExecutionService
                     $this->states->requeue($startedTask->getKey(), $message);
                     $this->logs->record($startedTask->fresh(), 'processing_failed', $message, [
                         'retryable' => true,
+                        'duration_ms' => $this->durationMilliseconds($startedAt),
                     ]);
                 } else {
                     $this->states->fail($startedTask->getKey(), $message);
                     $this->logs->record($startedTask->fresh(), 'processing_failed', $message, [
                         'retryable' => false,
+                        'duration_ms' => $this->durationMilliseconds($startedAt),
                     ]);
                 }
 
@@ -58,7 +61,9 @@ class TaskExecutionService
             }
 
             if ($this->states->complete($startedTask->getKey())) {
-                $this->logs->record($startedTask->fresh(), 'processing_completed');
+                $this->logs->record($startedTask->fresh(), 'processing_completed', metadata: [
+                    'duration_ms' => $this->durationMilliseconds($startedAt),
+                ]);
             }
         });
     }
@@ -83,5 +88,10 @@ class TaskExecutionService
         }
 
         return false;
+    }
+
+    private function durationMilliseconds(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
     }
 }
